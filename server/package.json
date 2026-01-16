@@ -1,0 +1,16 @@
+{
+  "name": "kaasa-backend",
+  "version": "1.0.0",
+  "description": "KAASA backend server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "cors": "^2.8.5"
+  },
+  "author": "KAASA",
+  "license": "ISC"
+}
+
