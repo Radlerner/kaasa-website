@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAASA 관리자 - 회원 관리</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <!-- 로그인 모달 -->
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 max-w-md w-full">
+            <h2 class="text-2xl font-bold mb-6 text-center">KAASA 관리자 로그인</h2>
+            
+            <form id="adminLoginForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">이메일</label>
+                    <input type="email" id="adminEmail" required 
+                           class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                           placeholder="admin@kaasa.org">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-2">비밀번호</label>
+                    <input type="password" id="adminPassword" required 
+                           class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                           placeholder="비밀번호">
+                </div>
+                
+                <button type="submit" 
+                        class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">
+                    로그인
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 대시보드 -->
+    <div id="dashboard" class="hidden">
+        <!-- 헤더 -->
+        <header class="bg-white shadow">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-green-600">KAASA 관리자</h1>
+                <div class="flex items-center gap-4">
+                    <span id="adminName" class="text-gray-600"></span>
+                    <button onclick="logout()" class="text-red-600 hover:text-red-800">로그아웃</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 통계 카드 -->
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <div class="text-sm text-gray-600">전체 회원</div>
+                    <div id="totalMembers" class="text-3xl font-bold text-green-600">0</div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <div class="text-sm text-gray-600">승인 대기</div>
+                    <div id="pendingMembers" class="text-3xl font-bold text-yellow-600">0</div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <div class="text-sm text-gray-600">무료 회원</div>
+                    <div id="freeMembers" class="text-3xl font-bold text-blue-600">0</div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <div class="text-sm text-gray-600">유료 회원</div>
+                    <div id="paidMembers" class="text-3xl font-bold text-purple-600">0</div>
+                </div>
+            </div>
+
+            <!-- 검색 및 필터 -->
+            <div class="bg-white p-4 rounded-lg shadow mb-6">
+                <div class="flex gap-4">
+                    <input type="text" id="searchKeyword" placeholder="이름, 이메일 검색..."
+                           class="flex-1 px-4 py-2 border rounded-lg">
+                    
+                    <select id="statusFilter" class="px-4 py-2 border rounded-lg">
+                        <option value="">전체 상태</option>
+                        <option value="pending">승인 대기</option>
+                        <option value="active_free">무료 회원</option>
+                        <option value="active_paid">유료 회원</option>
+                        <option value="suspended">정지</option>
+                    </select>
+                    
+                    <button onclick="loadMembers()" 
+                            class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                        검색
+                    </button>
+                </div>
+            </div>
+
+            <!-- 회원 목록 -->
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+                <table class="min-w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">이메일</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">이름</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">회원유형</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">가입일</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">작업</th>
+                        </tr>
+                    </thead>
+                    <tbody id="memberList" class="bg-white divide-y divide-gray-200">
+                        <!-- 동적 생성 -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 페이지네이션 -->
+            <div id="pagination" class="mt-6 flex justify-center gap-2">
+                <!-- 동적 생성 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API 설정
+        const API_BASE_URL = 'https://kaasa-website.onrender.com/api';
+        let adminToken = localStorage.getItem('adminToken');
+        let currentPage = 1;
+
+        // 페이지 로드 시
+        document.addEventListener('DOMContentLoaded', function() {
+            if (adminToken) {
+                // 토큰 유효성 확인
+                verifyToken();
+            }
+        });
+
+        // 로그인 처리
+        document.getElementById('adminLoginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.token) {
+                    adminToken = data.token;
+                    localStorage.setItem('adminToken', adminToken);
+                    localStorage.setItem('adminUser', JSON.stringify(data.member));
+                    
+                    showDashboard();
+                    loadMembers();
+                } else {
+                    alert('로그인 실패: ' + (data.error || '이메일 또는 비밀번호를 확인해주세요.'));
+                }
+            } catch (error) {
+                console.error('로그인 오류:', error);
+                alert('로그인 중 오류가 발생했습니다.');
+            }
+        });
+
+        // 토큰 유효성 확인
+        async function verifyToken() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/me`, {
+                    headers: {'Authorization': 'Bearer ' + adminToken}
+                });
+                
+                if (response.ok) {
+                    showDashboard();
+                    loadMembers();
+                } else {
+                    localStorage.removeItem('adminToken');
+                    localStorage.removeItem('adminUser');
+                }
+            } catch (error) {
+                console.error('토큰 검증 오류:', error);
+            }
+        }
+
+        // 대시보드 표시
+        function showDashboard() {
+            document.getElementById('loginModal').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            
+            const adminUser = JSON.parse(localStorage.getItem('adminUser') || '{}');
+            document.getElementById('adminName').textContent = adminUser.name || '관리자';
+        }
+
+        // 회원 목록 로드
+        async function loadMembers(page = 1) {
+            try {
+                const keyword = document.getElementById('searchKeyword').value;
+                const status = document.getElementById('statusFilter').value;
+                
+                let url = `${API_BASE_URL}/admin/members?page=${page}&limit=20`;
+                if (keyword) url += `&search=${encodeURIComponent(keyword)}`;
+                if (status) url += `&status=${status}`;
+                
+                const response = await fetch(url, {
+                    headers: {'Authorization': 'Bearer ' + adminToken}
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayMembers(data.members || []);
+                    updateStats(data.members || []);
+                    updatePagination(data.total || 0, page, data.limit || 20);
+                } else {
+                    alert('회원 목록을 불러올 수 없습니다: ' + (data.error || ''));
+                }
+            } catch (error) {
+                console.error('회원 목록 로드 오류:', error);
+                alert('회원 목록 로드 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 회원 목록 표시
+        function displayMembers(members) {
+            const tbody = document.getElementById('memberList');
+            
+            if (members.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-gray-500">회원이 없습니다.</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = members.map(member => `
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${member.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${member.email}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">${member.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${getMemberTypeName(member.member_type)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs rounded-full ${getStatusClass(member.member_status)}">
+                            ${getStatusName(member.member_status)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${formatDate(member.join_date)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button onclick="viewMember(${member.id})" 
+                                class="text-blue-600 hover:text-blue-800 mr-2">상세</button>
+                        ${member.member_status === 'pending' ? 
+                            `<button onclick="approveMember(${member.id})" 
+                                    class="text-green-600 hover:text-green-800">승인</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 통계 업데이트
+        function updateStats(members) {
+            const total = members.length;
+            const pending = members.filter(m => m.member_status === 'pending').length;
+            const free = members.filter(m => m.member_status === 'active_free').length;
+            const paid = members.filter(m => m.member_status === 'active_paid').length;
+            
+            document.getElementById('totalMembers').textContent = total;
+            document.getElementById('pendingMembers').textContent = pending;
+            document.getElementById('freeMembers').textContent = free;
+            document.getElementById('paidMembers').textContent = paid;
+        }
+
+        // 회원 상세 보기
+        async function viewMember(id) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/members/${id}`, {
+                    headers: {'Authorization': 'Bearer ' + adminToken}
+                });
+                
+                const member = await response.json();
+                
+                if (response.ok) {
+                    alert(JSON.stringify(member, null, 2));
+                } else {
+                    alert('회원 정보를 불러올 수 없습니다.');
+                }
+            } catch (error) {
+                console.error('회원 상세 조회 오류:', error);
+            }
+        }
+
+        // 회원 승인
+        async function approveMember(id) {
+            if (!confirm('이 회원을 승인하시겠습니까?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/members/${id}/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + adminToken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('회원이 승인되었습니다.');
+                    loadMembers(currentPage);
+                } else {
+                    alert('승인 실패: ' + (data.error || ''));
+                }
+            } catch (error) {
+                console.error('회원 승인 오류:', error);
+                alert('승인 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 페이지네이션
+        function updatePagination(total, page, limit) {
+            currentPage = page;
+            const totalPages = Math.ceil(total / limit);
+            const paginationDiv = document.getElementById('pagination');
+            
+            let html = '';
+            for (let i = 1; i <= totalPages; i++) {
+                html += `
+                    <button onclick="loadMembers(${i})" 
+                            class="px-4 py-2 ${i === page ? 'bg-green-600 text-white' : 'bg-white text-gray-700'} rounded-lg">
+                        ${i}
+                    </button>
+                `;
+            }
+            paginationDiv.innerHTML = html;
+        }
+
+        // 로그아웃
+        function logout() {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminUser');
+            location.reload();
+        }
+
+        // 헬퍼 함수
+        function getMemberTypeName(type) {
+            const types = {
+                'individual': '개인회원',
+                'corporate': '기업회원',
+                'consultant_associate': '준전문가',
+                'consultant_expert': '전문가',
+                'consultant_senior': '수석전문가',
+                'honorary': '명예회원'
+            };
+            return types[type] || type;
+        }
+
+        function getStatusName(status) {
+            const statuses = {
+                'pending': '승인대기',
+                'active_free': '무료회원',
+                'active_paid': '유료회원',
+                'suspended': '정지',
+                'withdrawn': '탈퇴'
+            };
+            return statuses[status] || status;
+        }
+
+        function getStatusClass(status) {
+            const classes = {
+                'pending': 'bg-yellow-100 text-yellow-800',
+                'active_free': 'bg-blue-100 text-blue-800',
+                'active_paid': 'bg-green-100 text-green-800',
+                'suspended': 'bg-red-100 text-red-800',
+                'withdrawn': 'bg-gray-100 text-gray-800'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-800';
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('ko-KR');
+        }
+    </script>
+</body>
+</html>
